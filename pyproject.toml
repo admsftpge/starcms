@@ -11,6 +11,7 @@ dependencies = [
     "aiosqlite>=0.22.1",
     "pydantic>=2.13.4",
     "sqlalchemy[asyncio]>=2.0.50",
+    "starlette>=1.2.1",
 ]
 
 [build-system]
@@ -19,10 +20,14 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "fastapi>=0.136.3",
+    "httpx>=0.28.1",
     "poethepoet>=0.46.0",
     "pytest>=9.0.3",
     "pytest-asyncio>=1.4.0",
+    "python-fasthtml>=0.14.2",
     "ruff>=0.15.16",
+    "uvicorn>=0.49.0",
 ]
 
 [tool.pytest.ini_options]
@@ -34,3 +39,5 @@ test = "pytest"
 lint = "ruff check"
 fix = "ruff check --fix"
 check = ["lint", "test"]
+demo-fastapi = "uvicorn examples.fastapi_host:app --reload"
+demo-fasthtml = "uvicorn examples.fasthtml_host:app --reload"

@@ -8,3 +8,9 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Local databases (demo apps, dev)
+*.db
+
+# FastHTML auto-generated session secret (created by tests/demos)
+.sesskey
