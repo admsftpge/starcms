@@ -7,6 +7,8 @@ specs that drive form and API generation — so the database schema can never
 drift from the model definition.
 """
 
+import asyncio
+import contextlib
 import datetime
 import typing
 
@@ -50,7 +52,7 @@ def table_for(
         sqlalchemy.Column(s.name, _COLUMN_TYPES[s.python_type], nullable=s.nullable)
         for s in specs
     ]
-    return sqlalchemy.Table(model.__name__.lower(), metadata, *columns)
+    return sqlalchemy.Table(schema.model_key(model), metadata, *columns)
 
 
 class Repository:
@@ -65,11 +67,11 @@ class Repository:
         self,
         model: type[pydantic.BaseModel],
         table: sqlalchemy.Table,
-        engine: sa_async.AsyncEngine,
+        database: "Database",
     ) -> None:
         self._model = model
         self._table = table
-        self._engine = engine
+        self._database = database
 
     def _check_instance(self, instance: pydantic.BaseModel) -> None:
         if not isinstance(instance, self._model):
@@ -80,14 +82,14 @@ class Repository:
     async def create(self, instance: pydantic.BaseModel) -> int:
         """Insert a validated instance; returns the new row's id."""
         self._check_instance(instance)
-        async with self._engine.begin() as conn:
+        async with self._database.begin() as conn:
             result = await conn.execute(
                 sqlalchemy.insert(self._table).values(**instance.model_dump())
             )
             return result.inserted_primary_key[0]
 
     async def get(self, record_id: int) -> Row | None:
-        async with self._engine.connect() as conn:
+        async with self._database.connect() as conn:
             result = await conn.execute(
                 sqlalchemy.select(self._table).where(self._table.c.id == record_id)
             )
@@ -100,14 +102,14 @@ class Repository:
             stmt = stmt.offset(offset)
         if limit is not None:
             stmt = stmt.limit(limit)
-        async with self._engine.connect() as conn:
+        async with self._database.connect() as conn:
             result = await conn.execute(stmt)
             return [dict(r) for r in result.mappings()]
 
     async def update(self, record_id: int, instance: pydantic.BaseModel) -> bool:
         """Replace a row's fields with the instance's; True if the row existed."""
         self._check_instance(instance)
-        async with self._engine.begin() as conn:
+        async with self._database.begin() as conn:
             result = await conn.execute(
                 sqlalchemy.update(self._table)
                 .where(self._table.c.id == record_id)
@@ -117,7 +119,7 @@ class Repository:
 
     async def delete(self, record_id: int) -> bool:
         """Delete a row by id; True if it existed."""
-        async with self._engine.begin() as conn:
+        async with self._database.begin() as conn:
             result = await conn.execute(
                 sqlalchemy.delete(self._table).where(self._table.c.id == record_id)
             )
@@ -133,9 +135,27 @@ class Database:
         self._engine = sa_async.create_async_engine(url)
         self._metadata = sqlalchemy.MetaData()
         self._repos = {
-            model: Repository(model, table_for(model, self._metadata), self._engine)
+            model: Repository(model, table_for(model, self._metadata), self)
             for model in models
         }
+        self._ready = False
+        self._ready_lock = asyncio.Lock()
+
+    @contextlib.asynccontextmanager
+    async def connect(
+        self,
+    ) -> typing.AsyncIterator[sa_async.AsyncConnection]:
+        """A read connection, lazily initializing the schema on first use."""
+        await self.ensure_ready()
+        async with self._engine.connect() as conn:
+            yield conn
+
+    @contextlib.asynccontextmanager
+    async def begin(self) -> typing.AsyncIterator[sa_async.AsyncConnection]:
+        """A transactional connection, lazily initializing the schema on first use."""
+        await self.ensure_ready()
+        async with self._engine.begin() as conn:
+            yield conn
 
     def repo(self, model: type[pydantic.BaseModel]) -> Repository:
         try:
@@ -150,6 +170,21 @@ class Database:
         are left untouched even if the model changed — drop and recreate.)"""
         async with self._engine.begin() as conn:
             await conn.run_sync(self._metadata.create_all)
+
+    async def ensure_ready(self) -> None:
+        """Idempotent first-use init, safe under concurrent requests.
+
+        Enforced at connection acquisition (connect/begin) rather than via
+        HTTP middleware or startup hooks: mounted sub-apps get no lifespan
+        events from Starlette hosts, and the in-process query API never
+        passes through HTTP at all. After init this is one bool check.
+        """
+        if self._ready:
+            return
+        async with self._ready_lock:
+            if not self._ready:
+                await self.create_all()
+                self._ready = True
 
     async def dispose(self) -> None:
         await self._engine.dispose()

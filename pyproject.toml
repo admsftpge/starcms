@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.11"
 dependencies = [
     "aiosqlite>=0.22.1",
+    "htpy>=26.5.1",
     "pydantic>=2.13.4",
     "sqlalchemy[asyncio]>=2.0.50",
     "starlette>=1.2.1",

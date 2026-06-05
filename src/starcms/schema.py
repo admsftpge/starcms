@@ -26,6 +26,16 @@ SUPPORTED_TYPES: tuple[type, ...] = (str, int, float, bool, datetime.datetime)
 ID_FIELD: typing.Final = "id"
 
 
+def model_key(model: type[pydantic.BaseModel]) -> str:
+    """Canonical external identifier for a model.
+
+    Every layer that names a model outside Python uses this one rule —
+    table names, admin URL slugs, API paths. Table names are persisted,
+    so the layers must never derive this independently and drift.
+    """
+    return model.__name__.lower()
+
+
 class UnsupportedTypeError(TypeError):
     """Raised when a model field's type has no starcms mapping."""
 

@@ -118,3 +118,13 @@ class TestCrud:
 
         with pytest.raises(KeyError, match="Unregistered"):
             database.repo(Unregistered)
+
+    async def test_schema_initializes_lazily_on_first_operation(self, db_url):
+        # No create_all: connection acquisition must init the schema itself.
+        # This is what guarantees readiness for ALL consumers — admin, API,
+        # and in-process queries alike — with no middleware involved.
+        d = db.Database(db_url, [sample_models.Article])
+        try:
+            assert await d.repo(sample_models.Article).list() == []
+        finally:
+            await d.dispose()
