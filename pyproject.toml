@@ -1,0 +1,14 @@
+[project]
+name = "starcms"
+version = "0.1.0"
+description = "Code-first CMS for Python: define Pydantic models, get an admin UI and content API, mounted into your FastAPI or FastHTML app."
+readme = "README.md"
+authors = [
+    { name = "Adam Seifert-Page" }
+]
+requires-python = ">=3.11"
+dependencies = []
+
+[build-system]
+requires = ["uv_build>=0.11.19,<0.12.0"]
+build-backend = "uv_build"
