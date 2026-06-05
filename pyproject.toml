@@ -1,6 +1,6 @@
 [project]
 name = "starcms"
-version = "0.1.0"
+version = "0.0.1"
 description = "Code-first CMS for Python: define Pydantic models, get an admin UI and content API, mounted into your FastAPI or FastHTML app."
 readme = "README.md"
 authors = [
