@@ -151,6 +151,14 @@ class TestRejections:
         with pytest.raises(schema.UnsupportedTypeError, match="M.data"):
             schema.introspect(M)
 
+    def test_model_declaring_id_field_is_rejected(self):
+        class M(pydantic.BaseModel):
+            id: int
+            title: str
+
+        with pytest.raises(ValueError, match="'id'"):
+            schema.introspect(M)
+
     def test_multi_type_union_is_rejected(self):
         class M(pydantic.BaseModel):
             value: int | str

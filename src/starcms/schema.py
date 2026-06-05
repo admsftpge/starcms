@@ -19,6 +19,12 @@ import pydantic
 # admin or the database layer.
 SUPPORTED_TYPES: tuple[type, ...] = (str, int, float, bool, datetime.datetime)
 
+# Field name reserved for the system-managed primary key. Defined here, not
+# in the db layer, because every layer references it: db columns, admin
+# routes (/{id}), API serialization — and the rejection must happen at
+# introspection time like every other model-shape rule.
+ID_FIELD: typing.Final = "id"
+
 
 class UnsupportedTypeError(TypeError):
     """Raised when a model field's type has no starcms mapping."""
@@ -92,6 +98,7 @@ def introspect(model: type[pydantic.BaseModel]) -> tuple[FieldSpec, ...]:
 
     Raises:
         TypeError: if `model` is not a Pydantic BaseModel subclass.
+        ValueError: if the model declares the reserved field name "id".
         UnsupportedTypeError: if any field's type has no starcms mapping.
     """
     # Validate before the cache: functools.cache would otherwise greet bad
@@ -107,6 +114,12 @@ def introspect(model: type[pydantic.BaseModel]) -> tuple[FieldSpec, ...]:
 def _introspect(model: type[pydantic.BaseModel]) -> tuple[FieldSpec, ...]:
     specs: list[FieldSpec] = []
     for name, info in model.model_fields.items():
+        if name == ID_FIELD:
+            raise ValueError(
+                f"{model.__name__} declares a field named {ID_FIELD!r}; starcms "
+                "manages the primary key itself, so models must not define one."
+            )
+
         annotation, nullable = _unwrap_optional(info.annotation)
 
         # Exact match only: bool is a subclass of int, so issubclass checks
