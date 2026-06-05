@@ -83,13 +83,20 @@ def _field_widget(spec: schema.FieldSpec, value: FormValue) -> htpy.Node:
     )
 
 
+def _post_form(action: str, *children: htpy.Node) -> htpy.Node:
+    """Every admin mutation posts through here — the one place a CSRF
+    token gets injected when auth lands."""
+    return htpy.form(method="post", action=action)[children]
+
+
 def _model_form(
     specs: tuple[schema.FieldSpec, ...],
     values: dict[str, FormValue],
     errors: dict[str, str],
     action: str,
 ) -> htpy.Node:
-    return htpy.form(method="post", action=action)[
+    return _post_form(
+        action,
         # Model-level validator errors arrive with an empty loc -> key "".
         htpy.p(".error")[errors[""]] if "" in errors else None,
         (
@@ -104,7 +111,7 @@ def _model_form(
             for spec in specs
         ),
         htpy.button(type="submit")["Save"],
-    ]
+    )
 
 
 # --- form parsing (the way back in) --------------------------------------
@@ -172,7 +179,9 @@ def _cell(value: typing.Any) -> str:
 
 
 def _record_table(
-    specs: tuple[schema.FieldSpec, ...], rows: list[dict]
+    specs: tuple[schema.FieldSpec, ...],
+    rows: list[dict],
+    edit_url: typing.Callable[[int], str],
 ) -> htpy.Node:
     if not rows:
         return htpy.p["Nothing here yet."]
@@ -183,7 +192,11 @@ def _record_table(
         htpy.tbody[
             (
                 htpy.tr[
-                    htpy.td[row[schema.ID_FIELD]],
+                    htpy.td[
+                        htpy.a(href=edit_url(row[schema.ID_FIELD]))[
+                            row[schema.ID_FIELD]
+                        ]
+                    ],
                     (htpy.td[_cell(row[s.name])] for s in specs),
                 ]
                 for row in rows
@@ -192,7 +205,23 @@ def _record_table(
     ]
 
 
+def _delete_form(action: str) -> htpy.Node:
+    # Deliberately lives only on the edit page: reaching it means you are
+    # looking at exactly the record you are about to delete — the no-JS
+    # stand-in for a confirmation dialog until htmx arrives.
+    return _post_form(action, htpy.button(type="submit")["Delete"])
+
+
 # --- views ---------------------------------------------------------------
+
+
+def _redirect_to_list(
+    request: requests.Request, slug: str
+) -> responses.RedirectResponse:
+    """The post-mutation destination: 303 back to the model's list."""
+    return responses.RedirectResponse(
+        request.url_for("model_list", slug=slug), status_code=303
+    )
 
 
 async def home(request: requests.Request) -> responses.HTMLResponse:
@@ -234,7 +263,13 @@ async def model_list(request: requests.Request) -> responses.HTMLResponse:
                     f"+ New {model.__name__}"
                 ],
             ],
-            _record_table(specs, rows),
+            _record_table(
+                specs,
+                rows,
+                edit_url=lambda record_id: str(
+                    request.url_for("model_edit", slug=slug, record_id=record_id)
+                ),
+            ),
         )
     )
 
@@ -265,9 +300,62 @@ async def model_create(request: requests.Request) -> responses.Response:
             status_code=422,
         )
     await cms.database.repo(model).create(instance)
-    return responses.RedirectResponse(
-        request.url_for("model_list", slug=slug), status_code=303
+    return _redirect_to_list(request, slug)
+
+
+async def model_edit(request: requests.Request) -> responses.Response:
+    cms = request.app.state.cms
+    model = _model_or_404(cms, request.path_params["slug"])
+    slug = schema.model_key(model)
+    record_id = request.path_params["record_id"]
+    specs = schema.introspect(model)
+    repo = cms.database.repo(model)
+    action = str(request.url_for("model_edit", slug=slug, record_id=record_id))
+    delete_action = str(
+        request.url_for("model_delete", slug=slug, record_id=record_id)
     )
+    title = f"Edit {model.__name__} #{record_id}"
+
+    if request.method == "GET":
+        row = await repo.get(record_id)
+        if row is None:
+            raise exceptions.HTTPException(status_code=404)
+        values = {
+            spec.name: _to_form_value(spec, row[spec.name]) for spec in specs
+        }
+        return responses.HTMLResponse(
+            _layout(
+                title,
+                _model_form(specs, values, {}, action),
+                _delete_form(delete_action),
+            )
+        )
+
+    form = await request.form()
+    instance, errors, raw = _parse_form(model, form)
+    if instance is None:
+        # Same page composition as GET: the Delete button must not vanish
+        # just because a save attempt failed.
+        return responses.HTMLResponse(
+            _layout(
+                title,
+                _model_form(specs, raw, errors, action),
+                _delete_form(delete_action),
+            ),
+            status_code=422,
+        )
+    if not await repo.update(record_id, instance):
+        raise exceptions.HTTPException(status_code=404)
+    return _redirect_to_list(request, slug)
+
+
+async def model_delete(request: requests.Request) -> responses.Response:
+    cms = request.app.state.cms
+    model = _model_or_404(cms, request.path_params["slug"])
+    slug = schema.model_key(model)
+    if not await cms.database.repo(model).delete(request.path_params["record_id"]):
+        raise exceptions.HTTPException(status_code=404)
+    return _redirect_to_list(request, slug)
 
 
 # --- app -----------------------------------------------------------------
@@ -287,6 +375,14 @@ def build_app(cms: "core.StarCMS") -> applications.Starlette:
             routing.Route(
                 "/{slug}/new", model_create, methods=["GET", "POST"],
                 name="model_create",
+            ),
+            routing.Route(
+                "/{slug}/{record_id:int}/edit", model_edit,
+                methods=["GET", "POST"], name="model_edit",
+            ),
+            routing.Route(
+                "/{slug}/{record_id:int}/delete", model_delete,
+                methods=["POST"], name="model_delete",
             ),
             routing.Route("/{slug}", model_list, name="model_list"),
         ],
