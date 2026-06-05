@@ -7,8 +7,23 @@ authors = [
     { name = "Adam Seifert-Page" }
 ]
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "pydantic>=2.13.4",
+]
 
 [build-system]
 requires = ["uv_build>=0.11.19,<0.12.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "poethepoet>=0.46.0",
+    "pytest>=9.0.3",
+    "ruff>=0.15.16",
+]
+
+[tool.poe.tasks]
+test = "pytest"
+lint = "ruff check"
+fix = "ruff check --fix"
+check = ["lint", "test"]
