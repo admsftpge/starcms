@@ -82,6 +82,18 @@ class TestCrud:
         page = await repo.list(limit=2, offset=1)
         assert [r["title"] for r in page] == ["b", "c"]
 
+    async def test_list_where_filters_by_equality(self, repo):
+        await repo.create(sample_models.Article(title="draft"))
+        await repo.create(sample_models.Article(title="live", published=True))
+
+        rows = await repo.list(where={"published": True})
+        assert [r["title"] for r in rows] == ["live"]
+        assert await repo.list(where={"title": "nope"}) == []
+
+    async def test_list_where_rejects_unknown_fields(self, repo):
+        with pytest.raises(ValueError, match="no field 'bogus'"):
+            await repo.list(where={"bogus": 1})
+
     async def test_update_replaces_fields(self, repo):
         record_id = await repo.create(sample_models.Article(title="before"))
 

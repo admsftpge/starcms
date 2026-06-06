@@ -96,8 +96,21 @@ class Repository:
             row = result.mappings().first()
         return dict(row) if row is not None else None
 
-    async def list(self, *, limit: int | None = None, offset: int = 0) -> list[Row]:
+    async def list(
+        self,
+        *,
+        limit: int | None = None,
+        offset: int = 0,
+        where: dict[str, typing.Any] | None = None,
+    ) -> list[Row]:
+        """Rows in id order; `where` applies field == value filters."""
         stmt = sqlalchemy.select(self._table).order_by(self._table.c.id)
+        for name, value in (where or {}).items():
+            if name not in self._table.c:
+                raise ValueError(
+                    f"{self._model.__name__} has no field {name!r} to filter on"
+                )
+            stmt = stmt.where(self._table.c[name] == value)
         if offset:
             stmt = stmt.offset(offset)
         if limit is not None:

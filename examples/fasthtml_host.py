@@ -25,14 +25,19 @@ class BlogPost(pydantic.BaseModel):
 app = fh.FastHTML()
 rt = app.route
 
-
-@rt("/")
-def home():
-    return fh.Div(
-        fh.H1("Host FastHTML site"),
-        fh.A("Go to the starcms admin", href="/admin/"),
-    )
-
-
 cms = starcms.StarCMS(db="sqlite+aiosqlite:///demo.db", models=[BlogPost])
 cms.mount(app, admin="/admin")
+
+
+@rt("/")
+async def home():
+    # The in-process query face: the site reads its own content directly —
+    # no HTTP round-trip to itself, no JSON API needed.
+    posts = await cms.find(BlogPost, published=True)
+    return fh.Div(
+        fh.H1("Host FastHTML site"),
+        fh.Ul(*[fh.Li(post["title"]) for post in posts])
+        if posts
+        else fh.P("No published posts yet — write one in the admin."),
+        fh.A("Go to the starcms admin", href="/admin/"),
+    )

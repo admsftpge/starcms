@@ -21,10 +21,10 @@ if typing.TYPE_CHECKING:
 
 
 def _model_or_404(cms: "core.StarCMS", slug: str) -> type[pydantic.BaseModel]:
-    for model in cms.models:
-        if schema.model_key(model) == slug:
-            return model
-    raise exceptions.HTTPException(status_code=404, detail=f"No model {slug!r}")
+    model = cms.model_by_key(slug)
+    if model is None:
+        raise exceptions.HTTPException(status_code=404, detail=f"No model {slug!r}")
+    return model
 
 
 # --- components ----------------------------------------------------------

@@ -31,4 +31,5 @@ def ping() -> dict:
 
 
 cms = starcms.StarCMS(db="sqlite+aiosqlite:///demo.db", models=[BlogPost])
-cms.mount(app, admin="/admin")
+cms.mount(app, admin="/admin", api="/api/cms")
+# Content created in the admin is served at /api/cms/blogpost — no login.

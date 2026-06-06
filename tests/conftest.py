@@ -1,5 +1,6 @@
 """Shared fixtures for the test suite."""
 
+import asyncio
 import re
 
 import pytest
@@ -8,6 +9,20 @@ from starlette import applications, testclient
 import sample_models
 import starcms
 from starcms import db
+
+
+def seed(db_url: str, *articles: sample_models.Article) -> None:
+    """Insert rows using a separate Database: engines are event-loop-bound,
+    so the TestClient's loop and ours must not share one."""
+
+    async def _run() -> None:
+        d = db.Database(db_url, [sample_models.Article])
+        repo = d.repo(sample_models.Article)
+        for article in articles:
+            await repo.create(article)
+        await d.dispose()
+
+    asyncio.run(_run())
 
 CSRF_RE = re.compile('name="csrf_token" value="([^"]*)"')
 

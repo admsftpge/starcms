@@ -1,11 +1,10 @@
 """Tests for the admin views (home, list, create, edit, delete) and lazy init."""
 
-import asyncio
 import datetime
 import re
 
 import sample_models
-from starcms import db
+from conftest import seed
 
 # Minimal valid create/edit payload; tests override fields via `VALID_FORM | {...}`.
 VALID_FORM = {"title": "t", "views": "0", "rating": "0"}
@@ -17,20 +16,6 @@ def input_tag(html: str, name: str) -> str:
     match = re.search(f'<input[^>]*name="{name}"[^>]*>', html)
     assert match, f"no input named {name}"
     return match.group(0)
-
-
-def seed(db_url: str, *articles: sample_models.Article) -> None:
-    """Insert rows using a separate Database: engines are event-loop-bound,
-    so the TestClient's loop and ours must not share one."""
-
-    async def _run() -> None:
-        d = db.Database(db_url, [sample_models.Article])
-        repo = d.repo(sample_models.Article)
-        for article in articles:
-            await repo.create(article)
-        await d.dispose()
-
-    asyncio.run(_run())
 
 
 class TestLazyInit:
