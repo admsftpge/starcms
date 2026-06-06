@@ -11,9 +11,10 @@ import typing
 
 import htpy
 import pydantic
-from starlette import applications, exceptions, requests, responses, routing
+from starlette import applications, exceptions, middleware, requests, responses, routing
+from starlette.middleware import sessions
 
-from starcms import forms, schema
+from starcms import auth, forms, schema
 
 if typing.TYPE_CHECKING:
     from starcms import core
@@ -87,6 +88,30 @@ def _redirect_to_list(
     )
 
 
+async def login(request: requests.Request) -> responses.Response:
+    action = str(request.url_for("login"))
+    if request.method == "GET":
+        return responses.HTMLResponse(_layout("Log in", forms.login_form(action)))
+
+    await auth.require_csrf(request)
+    form = await request.form()
+    if auth.verify(str(form.get("username", "")), str(form.get("password", ""))):
+        request.session["user"] = str(form.get("username"))
+        return responses.RedirectResponse(
+            request.url_for("home"), status_code=303
+        )
+    return responses.HTMLResponse(
+        _layout("Log in", forms.login_form(action, error="Invalid credentials.")),
+        status_code=401,
+    )
+
+
+async def logout(request: requests.Request) -> responses.Response:
+    await auth.require_csrf(request)
+    request.session.clear()
+    return responses.RedirectResponse(request.url_for("login"), status_code=303)
+
+
 async def home(request: requests.Request) -> responses.HTMLResponse:
     cms = request.app.state.cms
     return responses.HTMLResponse(
@@ -106,6 +131,10 @@ async def home(request: requests.Request) -> responses.HTMLResponse:
                     for model in cms.models
                 )
             ],
+            forms.post_form(
+                str(request.url_for("logout")),
+                htpy.button(type="submit")["Log out"],
+            ),
         )
     )
 
@@ -154,6 +183,7 @@ async def model_create(request: requests.Request) -> responses.Response:
             _layout(title, forms.model_form(specs, values, {}, action))
         )
 
+    await auth.require_csrf(request)
     form = await request.form()
     instance, errors, raw = forms.parse_form(model, form)
     if instance is None:
@@ -195,6 +225,7 @@ async def model_edit(request: requests.Request) -> responses.Response:
             )
         )
 
+    await auth.require_csrf(request)
     form = await request.form()
     instance, errors, raw = forms.parse_form(model, form)
     if instance is None:
@@ -214,6 +245,7 @@ async def model_edit(request: requests.Request) -> responses.Response:
 
 
 async def model_delete(request: requests.Request) -> responses.Response:
+    await auth.require_csrf(request)
     cms = request.app.state.cms
     model = _model_or_404(cms, request.path_params["slug"])
     slug = schema.model_key(model)
@@ -225,17 +257,25 @@ async def model_delete(request: requests.Request) -> responses.Response:
 # --- app -----------------------------------------------------------------
 
 
-def build_app(cms: "core.StarCMS") -> applications.Starlette:
+def build_app(
+    cms: "core.StarCMS", mount_path: str = "/admin"
+) -> applications.Starlette:
     """Build the admin app for one StarCMS instance.
 
     The instance travels on app.state rather than in closures, so handlers
     can move to their own modules as the admin grows. Database readiness
     needs no middleware here: the Database itself initializes lazily on
-    first connection.
+    first connection. mount_path scopes the session cookie to the admin —
+    note it's the within-host path, so a reverse proxy adding its own
+    prefix needs the cookie path reconsidered (known v0.1 limitation).
     """
     app = applications.Starlette(
         routes=[
             routing.Route("/", home, name="home"),
+            routing.Route(
+                "/login", login, methods=["GET", "POST"], name="login"
+            ),
+            routing.Route("/logout", logout, methods=["POST"], name="logout"),
             routing.Route(
                 "/{slug}/new", model_create, methods=["GET", "POST"],
                 name="model_create",
@@ -248,9 +288,22 @@ def build_app(cms: "core.StarCMS") -> applications.Starlette:
                 "/{slug}/{record_id:int}/delete", model_delete,
                 methods=["POST"], name="model_delete",
             ),
-            # Keep the wildcard last: anything above it (e.g. a /login
-            # route) would otherwise be swallowed as a model slug.
+            # Keep the wildcard last: anything above it (e.g. /login)
+            # would otherwise be swallowed as a model slug.
             routing.Route("/{slug}", model_list, name="model_list"),
+        ],
+        middleware=[
+            # Session first (outermost) so the gate can read it. The cookie
+            # is named and path-scoped so it can never collide with the
+            # host app's own session (e.g. FastHTML's default 'session').
+            middleware.Middleware(
+                sessions.SessionMiddleware,
+                secret_key=auth.session_secret(),
+                session_cookie="starcms_session",
+                path=mount_path,
+                same_site="lax",
+            ),
+            middleware.Middleware(auth.AuthGate),
         ],
     )
     app.state.cms = cms

@@ -1,8 +1,8 @@
 """Integration: the same admin app mounts into both FastAPI and FastHTML.
 
 This is the project's central architectural claim, so both hosts get the
-same three assertions: admin reachable, admin shows our content, host's own
-routes unaffected.
+same assertions: admin reachable (after login), admin shows our content,
+host's own routes unaffected.
 """
 
 import fastapi
@@ -11,7 +11,7 @@ from starlette import testclient
 
 
 class TestFastAPIHost:
-    def test_admin_mounts_and_host_routes_survive(self, cms):
+    def test_admin_mounts_and_host_routes_survive(self, cms, login):
         app = fastapi.FastAPI()
 
         @app.get("/api/ping")
@@ -20,6 +20,7 @@ class TestFastAPIHost:
 
         cms.mount(app, admin="/admin")
         client = testclient.TestClient(app)
+        login(client)
 
         admin_page = client.get("/admin/")
         assert admin_page.status_code == 200
@@ -29,7 +30,7 @@ class TestFastAPIHost:
 
 
 class TestFastHTMLHost:
-    def test_admin_mounts_and_host_routes_survive(self, cms):
+    def test_admin_mounts_and_host_routes_survive(self, cms, login):
         app = fh.FastHTML()
         rt = app.route
 
@@ -39,6 +40,7 @@ class TestFastHTMLHost:
 
         cms.mount(app, admin="/admin")
         client = testclient.TestClient(app)
+        login(client)
 
         admin_page = client.get("/admin/")
         assert admin_page.status_code == 200
@@ -48,10 +50,11 @@ class TestFastHTMLHost:
 
 
 class TestMountPath:
-    def test_custom_mount_prefix(self, cms):
+    def test_custom_mount_prefix(self, cms, login):
         app = fastapi.FastAPI()
         cms.mount(app, admin="/cms-backoffice")
         client = testclient.TestClient(app)
+        login(client, base="/cms-backoffice")
 
         assert client.get("/cms-backoffice/").status_code == 200
 
@@ -60,5 +63,7 @@ class TestMountPath:
         cms.mount(app, admin="/admin")
         client = testclient.TestClient(app)
 
-        # Starlette's mount redirects /admin -> /admin/; users will type both.
-        assert client.get("/admin", follow_redirects=True).status_code == 200
+        # /admin -> /admin/ (mount redirect) -> /admin/login (auth gate);
+        # the chain ends on a real page either way.
+        response = client.get("/admin", follow_redirects=True)
+        assert response.status_code == 200

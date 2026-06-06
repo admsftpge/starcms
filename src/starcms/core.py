@@ -33,4 +33,4 @@ class StarCMS:
         FastHTML are both Starlette subclasses, and `app.mount()` is the
         shared ASGI mechanism they all inherit.
         """
-        app.mount(admin, starcms.admin.build_app(self))
+        app.mount(admin, starcms.admin.build_app(self, mount_path=admin))

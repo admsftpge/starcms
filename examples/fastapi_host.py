@@ -1,13 +1,19 @@
 """Demo: starcms mounted in a FastAPI app.
 
 Run from the repo root:  uv run poe demo-fastapi
-Then visit:              http://localhost:8000/admin/
+Then visit:              http://localhost:8000/admin/  (log in: admin / admin)
 """
+
+import os
 
 import fastapi
 import pydantic
 
 import starcms
+
+# Demo-only convenience; never default credentials like this in production.
+os.environ.setdefault("STARCMS_ADMIN_USER", "admin")
+os.environ.setdefault("STARCMS_ADMIN_PASSWORD", "admin")
 
 
 class BlogPost(pydantic.BaseModel):

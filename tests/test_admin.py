@@ -4,20 +4,8 @@ import asyncio
 import datetime
 import re
 
-import pytest
-from starlette import applications, testclient
-
 import sample_models
 from starcms import db
-
-
-@pytest.fixture
-def client(cms) -> testclient.TestClient:
-    """The admin mounted at /admin in a plain Starlette host."""
-    host = applications.Starlette()
-    cms.mount(host, admin="/admin")
-    return testclient.TestClient(host)
-
 
 # Minimal valid create/edit payload; tests override fields via `VALID_FORM | {...}`.
 VALID_FORM = {"title": "t", "views": "0", "rating": "0"}

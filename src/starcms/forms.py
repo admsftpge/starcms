@@ -9,6 +9,7 @@ forms like delete and the future login), so post_form stays the single
 point where a CSRF token gets injected.
 """
 
+import contextvars
 import datetime
 import typing
 
@@ -16,6 +17,12 @@ import htpy
 import pydantic
 
 from starcms import schema
+
+# Set per-request by the auth middleware; post_form reads it ambiently so
+# token transport never threads through form-builder signatures.
+csrf_token: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "csrf_token", default=None
+)
 
 # FieldSpec.python_type → <input type=...>. bool is handled separately:
 # checkboxes have structurally different semantics (absent when unchecked).
@@ -71,16 +78,52 @@ def _field_widget(spec: schema.FieldSpec, value: FormValue) -> htpy.Node:
     )
 
 
-def post_form(action: str, *children: htpy.Node) -> htpy.Node:
-    """Every admin mutation posts through here — the one place a CSRF
-    token gets injected when auth lands.
+def _field_row(
+    name: str, label: str, widget: htpy.Node, error: str | None = None
+) -> htpy.Node:
+    return htpy.p[
+        htpy.label(for_=f"field-{name}")[label],
+        " ",
+        widget,
+        htpy.span(".error")[f" {error}"] if error else None,
+    ]
 
-    Transport decision (so auth doesn't relitigate it): the token will
-    arrive ambiently via a contextvar set by the auth middleware, not as
-    a parameter — parameter-threading would ripple through every form
-    builder and view, and forms.py must stay free of request handling.
+
+def post_form(action: str, *children: htpy.Node) -> htpy.Node:
+    """Every admin mutation posts through here — the single CSRF injection
+    point. The token arrives ambiently via the csrf_token contextvar (set
+    by the auth middleware), keeping forms.py free of request handling.
     """
-    return htpy.form(method="post", action=action)[children]
+    token = csrf_token.get()
+    return htpy.form(method="post", action=action)[
+        htpy.input(type="hidden", name="csrf_token", value=token)
+        if token
+        else None,
+        children,
+    ]
+
+
+def login_form(action: str, error: str | None = None) -> htpy.Node:
+    return post_form(
+        action,
+        htpy.p(".error")[error] if error else None,
+        _field_row(
+            "username",
+            "Username",
+            htpy.input(
+                type="text", name="username", id="field-username", required=True
+            ),
+        ),
+        _field_row(
+            "password",
+            "Password",
+            htpy.input(
+                type="password", name="password", id="field-password",
+                required=True,
+            ),
+        ),
+        htpy.button(type="submit")["Log in"],
+    )
 
 
 def model_form(
@@ -94,14 +137,12 @@ def model_form(
         # Model-level validator errors arrive with an empty loc -> key "".
         htpy.p(".error")[errors[""]] if "" in errors else None,
         (
-            htpy.p[
-                htpy.label(for_=f"field-{spec.name}")[spec.label],
-                " ",
+            _field_row(
+                spec.name,
+                spec.label,
                 _field_widget(spec, values.get(spec.name, "")),
-                htpy.span(".error")[f" {errors[spec.name]}"]
-                if spec.name in errors
-                else None,
-            ]
+                errors.get(spec.name),
+            )
             for spec in specs
         ),
         htpy.button(type="submit")["Save"],

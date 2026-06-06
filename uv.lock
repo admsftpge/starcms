@@ -893,6 +893,7 @@ source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
     { name = "htpy" },
+    { name = "itsdangerous" },
     { name = "pydantic" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "starlette" },
@@ -914,6 +915,7 @@ dev = [
 requires-dist = [
     { name = "aiosqlite", specifier = ">=0.22.1" },
     { name = "htpy", specifier = ">=26.5.1" },
+    { name = "itsdangerous", specifier = ">=2.2.0" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.50" },
     { name = "starlette", specifier = ">=1.2.1" },
