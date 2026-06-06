@@ -60,3 +60,4 @@ fix = "ruff check --fix"
 check = ["lint", "test"]
 demo-fastapi = "uvicorn examples.fastapi_host:app --reload"
 demo-fasthtml = "uvicorn examples.fasthtml_host:app --reload"
+release = "bash scripts/release.sh"
