@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Everything requires-python promises.
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          # Pins UV_PYTHON for every following step. Without it, uv run
+          # re-syncs to the repo's pinned .python-version and the matrix
+          # silently tests one Python four times.
+          python-version: ${{ matrix.python-version }}
+          cache-suffix: ${{ matrix.python-version }}
+      - name: Sync dependencies
+        run: uv sync --locked
+      - name: Lint and test
+        run: uv run poe check
