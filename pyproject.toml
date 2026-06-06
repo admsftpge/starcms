@@ -1,12 +1,22 @@
 [project]
 name = "starcms"
-version = "0.0.1"
+version = "0.1.0"
 description = "Code-first CMS for Python: define Pydantic models, get an admin UI and content API, mounted into your FastAPI or FastHTML app."
 readme = "README.md"
 authors = [
     { name = "Adam Seifert-Page" }
 ]
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["cms", "admin", "content-management", "fastapi", "fasthtml", "starlette", "pydantic"]
 requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content :: Content Management System",
+    "Framework :: FastAPI",
+]
 dependencies = [
     "aiosqlite>=0.22.1",
     "htpy>=26.5.1",
@@ -15,6 +25,13 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.50",
     "starlette>=1.2.1",
 ]
+
+[project.optional-dependencies]
+postgres = ["asyncpg>=0.30"]
+
+[project.urls]
+Repository = "https://github.com/admsftpge/starcms"
+Issues = "https://github.com/admsftpge/starcms/issues"
 
 [build-system]
 requires = ["uv_build>=0.11.19,<0.12.0"]
